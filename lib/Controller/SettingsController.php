@@ -2,6 +2,7 @@
 
 namespace OCA\ScienceMesh\Controller;
 
+use OCP\AppFramework\Http\JSONResponse;
 use OCP\IRequest;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\TemplateResponse;
@@ -11,9 +12,14 @@ use OCP\IURLGenerator;
 use OCA\ScienceMesh\AppConfig;
 use OCA\ScienceMesh\Crypt;
 use OCA\ScienceMesh\DocumentService;
+use OCA\ScienceMesh\RevaHttpClient;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
+use OCP\AppFramework\Http\TextPlainResponse;
+use OCP\AppFramework\Http;
+use OCA\Sciencemesh\ServerConfig;
+use OCP\IConfig;
 
 /**
  * Settings controller for the administration page
@@ -23,6 +29,9 @@ class SettingsController extends Controller
 	private $logger;
 	private $config;
 	private $urlGenerator;
+	private $serverConfig;
+	private $sciencemeshConfig;
+	private $userId;
 
 	const CATALOG_URL = "https://iop.sciencemesh.uni-muenster.de/iop/mentix/sitereg";
 
@@ -35,18 +44,23 @@ class SettingsController extends Controller
 	 * @param AppConfig $config - application configuration
 	 */
 	public function __construct($AppName,
-	                            IRequest $request,
-	                            IURLGenerator $urlGenerator,
-	                            IL10N $trans,
-	                            ILogger $logger,
-	                            AppConfig $config
+								IRequest $request,
+								IURLGenerator $urlGenerator,
+								IL10N $trans,
+								ILogger $logger,
+								AppConfig $config,
+								IConfig $sciencemeshConfig,
+		$userId
 	)
 	{
 		parent::__construct($AppName, $request);
+		$this->serverConfig = new \OCA\ScienceMesh\ServerConfig($sciencemeshConfig);
 
 		$this->urlGenerator = $urlGenerator;
 		$this->logger = $logger;
 		$this->config = $config;
+		$this->sciencemeshConfig = $sciencemeshConfig;
+		$this->userId = $userId;
 
 		$eventDispatcher = \OC::$server->getEventDispatcher();
 		$eventDispatcher->addListener(
@@ -217,5 +231,41 @@ class SettingsController extends Controller
 			"shareAttributesVersion" => $this->config->ShareAttributesVersion()
 		];
 		return $result;
+	}
+
+	/**
+	 * Save sciencemesh settings
+	 *
+	 * @return array
+	 *
+	 * @NoAdminRequired
+	 * @PublicPage
+	 */
+	public function SaveSciencemeshSettings()
+	{
+		$sciencemesh_iop_url = $this->request->getParam('sciencemesh_iop_url');
+		$sciencemesh_shared_secret = $this->request->getParam('sciencemesh_shared_secret');
+
+		$this->serverConfig->setIopUrl($sciencemesh_iop_url);
+		$this->serverConfig->setRevaSharedSecret($sciencemesh_shared_secret);
+
+		return new TextPlainResponse(true, Http::STATUS_OK);
+	}
+
+	/**
+	 * Check IOP URL connection
+	 *
+	 * @return array
+	 *
+	 * @NoAdminRequired
+	 * @PublicPage
+	 */
+
+	public function checkConnectionSettings()
+	{
+		$revaHttpClient = new RevaHttpClient($this->sciencemeshConfig, false);
+		$response_sciencemesh_iop_url = json_decode(str_replace('\n', '', $revaHttpClient->ocmProvider()), true);
+
+		return new JSONResponse($response_sciencemesh_iop_url);
 	}
 }
